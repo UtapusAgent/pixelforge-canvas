@@ -18,6 +18,9 @@ ApplicationWindow {
     property bool snapEnabled: true
     property string activeTool: "select"
     property string deviceStatus: "Local cutout engine: GPU if available, CPU fallback"
+    property string currentFontFamily: "Sans Serif"
+    property int currentFontSize: 36
+    property string currentTextColor: "#20242a"
 
     ListModel {
         id: layersModel
@@ -47,6 +50,7 @@ ApplicationWindow {
             }
 
             Button { text: "Import"; onClicked: importDialog.open() }
+            Button { text: "Add Text"; onClicked: addTextObject() }
             ToolButton { text: "Select"; checked: activeTool === "select"; onClicked: activeTool = "select" }
             ToolButton { text: "Snap"; checked: snapEnabled; onClicked: snapEnabled = !snapEnabled }
             Button {
@@ -106,6 +110,31 @@ ApplicationWindow {
                     color: "#4b5563"
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
+                }
+                Rectangle { height: 1; color: "#d6dee9"; Layout.fillWidth: true }
+                Label { text: "Text"; font.bold: true }
+                ComboBox {
+                    model: ["Sans Serif", "Serif", "Monospace"]
+                    Layout.fillWidth: true
+                    onActivated: {
+                        currentFontFamily = currentText
+                        applyTextStyle()
+                    }
+                }
+                SpinBox {
+                    from: 8
+                    to: 160
+                    value: currentFontSize
+                    Layout.fillWidth: true
+                    onValueModified: {
+                        currentFontSize = value
+                        applyTextStyle()
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button { text: "Black"; onClicked: { currentTextColor = "#20242a"; applyTextStyle() } }
+                    Button { text: "Blue"; onClicked: { currentTextColor = "#2563eb"; applyTextStyle() } }
                 }
             }
         }
@@ -167,9 +196,26 @@ ApplicationWindow {
 
                         Rectangle {
                             anchors.fill: parent
-                            visible: model.kind !== "image"
+                            visible: model.kind === "drawing"
                             color: "#e8eef6"
                             border.color: "#9ca8b7"
+                        }
+
+                        TextEdit {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            visible: model.kind === "text"
+                            text: model.textContent
+                            color: model.textColor
+                            font.family: model.fontFamily
+                            font.pixelSize: model.fontSize
+                            wrapMode: TextEdit.Wrap
+                            selectByMouse: true
+                            readOnly: selectedObjectId !== model.objectId
+                            onTextChanged: {
+                                if (model.kind === "text")
+                                    objectsModel.setProperty(index, "textContent", text)
+                            }
                         }
 
                         Rectangle {
@@ -336,7 +382,11 @@ ApplicationWindow {
             heightValue: 180,
             rotationValue: 0,
             visibleObject: true,
-            backgroundRemoved: false
+            backgroundRemoved: false,
+            textContent: "",
+            fontFamily: currentFontFamily,
+            fontSize: currentFontSize,
+            textColor: currentTextColor
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
@@ -364,6 +414,36 @@ ApplicationWindow {
         deviceStatus = "Cutout marked non-destructively. CLI: pixelforge bg-remove input output.png"
     }
 
+    function addTextObject() {
+        objectsModel.append({
+            objectId: "object-" + nextObjectId++,
+            kind: "text",
+            layerId: selectedLayerId,
+            source: "",
+            xPos: 120,
+            yPos: 120,
+            widthValue: 320,
+            heightValue: 110,
+            rotationValue: 0,
+            visibleObject: true,
+            backgroundRemoved: false,
+            textContent: "Double click to edit",
+            fontFamily: currentFontFamily,
+            fontSize: currentFontSize,
+            textColor: currentTextColor
+        })
+        selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
+    }
+
+    function applyTextStyle() {
+        var i = selectedIndex()
+        if (i < 0 || objectsModel.get(i).kind !== "text")
+            return
+        objectsModel.setProperty(i, "fontFamily", currentFontFamily)
+        objectsModel.setProperty(i, "fontSize", currentFontSize)
+        objectsModel.setProperty(i, "textColor", currentTextColor)
+    }
+
     function duplicateSelected() {
         var i = selectedIndex()
         if (i < 0)
@@ -380,7 +460,11 @@ ApplicationWindow {
             heightValue: item.heightValue,
             rotationValue: item.rotationValue,
             visibleObject: true,
-            backgroundRemoved: item.backgroundRemoved
+            backgroundRemoved: item.backgroundRemoved,
+            textContent: item.textContent,
+            fontFamily: item.fontFamily,
+            fontSize: item.fontSize,
+            textColor: item.textColor
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
