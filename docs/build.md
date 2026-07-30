@@ -27,6 +27,25 @@ make run
 
 The Go process writes the embedded QML UI into a temporary runtime directory and launches Qt. Core image processing and export helpers live in Go packages so they can be tested independently from the desktop runtime.
 
+## Nix
+
+The repository includes `flake.nix` with a development shell and a wrapped package:
+
+```sh
+nix develop
+make test
+make run
+```
+
+You can also build or run the package directly:
+
+```sh
+nix build
+nix run
+```
+
+The flake provides Go, Qt 6, Qt Quick Controls, Qt tooling, and Wayland support. The packaged binary is wrapped with Qt plugin and QML import paths so the Go launcher can find the QML runtime.
+
 ## Helper Commands
 
 ```sh
