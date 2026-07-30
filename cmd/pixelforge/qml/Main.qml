@@ -24,6 +24,9 @@ ApplicationWindow {
     property int currentBrushSize: 16
     property real currentBrushOpacity: 0.9
     property string currentBrushColor: "#ef4444"
+    property string exportStatus: "Ready"
+    property string exportFormat: "png"
+    property int exportQuality: 92
 
     ListModel {
         id: layersModel
@@ -37,6 +40,14 @@ ApplicationWindow {
         title: "Import picture"
         nameFilters: ["Images (*.png *.jpg *.jpeg)"]
         onAccepted: root.addImage(selectedFile)
+    }
+
+    FileDialog {
+        id: exportDialog
+        title: "Export canvas"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["PNG image (*.png)", "JPG image (*.jpg *.jpeg)"]
+        onAccepted: exportCanvas(selectedFile)
     }
 
     header: ToolBar {
@@ -71,6 +82,7 @@ ApplicationWindow {
             ToolButton { text: "Top"; onClicked: alignSelection("top") }
             ToolButton { text: "Middle"; onClicked: alignSelection("vcenter") }
             ToolButton { text: "Bottom"; onClicked: alignSelection("bottom") }
+            Button { text: "Export"; onClicked: exportDialog.open() }
             Item { Layout.fillWidth: true }
         }
     }
@@ -162,6 +174,26 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Button { text: "Red"; onClicked: currentBrushColor = "#ef4444" }
                     Button { text: "Blue"; onClicked: currentBrushColor = "#2563eb" }
+                }
+                Rectangle { height: 1; color: "#d6dee9"; Layout.fillWidth: true }
+                Label { text: "Export"; font.bold: true }
+                ComboBox {
+                    model: ["png", "jpg"]
+                    Layout.fillWidth: true
+                    onActivated: exportFormat = currentText
+                }
+                SpinBox {
+                    from: 1
+                    to: 100
+                    value: exportQuality
+                    Layout.fillWidth: true
+                    onValueModified: exportQuality = value
+                }
+                Label {
+                    text: exportStatus
+                    color: "#4b5563"
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
                 }
             }
         }
@@ -537,6 +569,22 @@ ApplicationWindow {
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
         activeTool = "brush"
+    }
+
+    function exportCanvas(fileUrl) {
+        var path = fileUrl.toString().replace("file://", "")
+        if (path.length === 0)
+            return
+        if (exportFormat === "png" && path.toLowerCase().slice(-4) !== ".png")
+            path += ".png"
+        if (exportFormat === "jpg" && path.toLowerCase().slice(-4) !== ".jpg" && path.toLowerCase().slice(-5) !== ".jpeg")
+            path += ".jpg"
+        canvas.grabToImage(function(result) {
+            if (result.saveToFile(path))
+                exportStatus = "Exported " + path
+            else
+                exportStatus = "Export failed: " + path
+        })
     }
 
     function applyTextStyle() {
