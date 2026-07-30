@@ -17,6 +17,7 @@ ApplicationWindow {
     property string selectedLayerId: "layer-base"
     property bool snapEnabled: true
     property string activeTool: "select"
+    property string deviceStatus: "Local cutout engine: GPU if available, CPU fallback"
 
     ListModel {
         id: layersModel
@@ -48,6 +49,11 @@ ApplicationWindow {
             Button { text: "Import"; onClicked: importDialog.open() }
             ToolButton { text: "Select"; checked: activeTool === "select"; onClicked: activeTool = "select" }
             ToolButton { text: "Snap"; checked: snapEnabled; onClicked: snapEnabled = !snapEnabled }
+            Button {
+                text: "Remove BG"
+                enabled: selectedObjectId !== "" && selectedKind() === "image"
+                onClicked: removeBackgroundPreview()
+            }
             ToolSeparator {}
             ToolButton { text: "Left"; onClicked: alignSelection("left") }
             ToolButton { text: "Center"; onClicked: alignSelection("hcenter") }
@@ -95,6 +101,12 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     onClicked: deleteSelected()
                 }
+                Label {
+                    text: deviceStatus
+                    color: "#4b5563"
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
             }
         }
 
@@ -132,7 +144,25 @@ ApplicationWindow {
                             source: model.kind === "image" ? model.source : ""
                             fillMode: Image.PreserveAspectFit
                             visible: model.kind === "image"
+                            opacity: model.backgroundRemoved ? 0.92 : 1
                             cache: false
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.margins: 6
+                            width: 92
+                            height: 24
+                            radius: 4
+                            color: "#16a34a"
+                            visible: model.backgroundRemoved
+                            Text {
+                                anchors.centerIn: parent
+                                text: "BG removed"
+                                color: "#ffffff"
+                                font.pixelSize: 12
+                            }
                         }
 
                         Rectangle {
@@ -305,7 +335,8 @@ ApplicationWindow {
             widthValue: 260,
             heightValue: 180,
             rotationValue: 0,
-            visibleObject: true
+            visibleObject: true,
+            backgroundRemoved: false
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
@@ -316,6 +347,21 @@ ApplicationWindow {
                 return i
         }
         return -1
+    }
+
+    function selectedKind() {
+        var i = selectedIndex()
+        if (i < 0)
+            return ""
+        return objectsModel.get(i).kind
+    }
+
+    function removeBackgroundPreview() {
+        var i = selectedIndex()
+        if (i < 0)
+            return
+        objectsModel.setProperty(i, "backgroundRemoved", true)
+        deviceStatus = "Cutout marked non-destructively. CLI: pixelforge bg-remove input output.png"
     }
 
     function duplicateSelected() {
@@ -333,7 +379,8 @@ ApplicationWindow {
             widthValue: item.widthValue,
             heightValue: item.heightValue,
             rotationValue: item.rotationValue,
-            visibleObject: true
+            visibleObject: true,
+            backgroundRemoved: item.backgroundRemoved
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
