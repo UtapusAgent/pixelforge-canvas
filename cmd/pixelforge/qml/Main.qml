@@ -1,24 +1,342 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
 
 ApplicationWindow {
     id: root
-    width: 1200
-    height: 760
+    width: 1240
+    height: 800
     visible: true
     title: "PixelForge Canvas"
+    color: "#f4f6f9"
 
-    Rectangle {
-        anchors.fill: parent
-        color: "#f7f9fc"
+    property int nextObjectId: 1
+    property int nextLayerId: 2
+    property string selectedObjectId: ""
+    property string selectedLayerId: "layer-base"
+    property bool snapEnabled: true
+    property string activeTool: "select"
 
-        Text {
-            anchors.centerIn: parent
-            text: "PixelForge Canvas MVP shell"
-            color: "#20242a"
-            font.pixelSize: 28
-            font.bold: true
+    ListModel {
+        id: layersModel
+        ListElement { layerId: "layer-base"; name: "Base images"; visibleLayer: true; lockedLayer: false }
+    }
+
+    ListModel { id: objectsModel }
+
+    FileDialog {
+        id: importDialog
+        title: "Import picture"
+        nameFilters: ["Images (*.png *.jpg *.jpeg)"]
+        onAccepted: root.addImage(selectedFile)
+    }
+
+    header: ToolBar {
+        RowLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            Label {
+                text: "PixelForge Canvas"
+                font.bold: true
+                font.pixelSize: 18
+                Layout.leftMargin: 12
+                Layout.preferredWidth: 190
+            }
+
+            Button { text: "Import"; onClicked: importDialog.open() }
+            ToolButton { text: "Select"; checked: activeTool === "select"; onClicked: activeTool = "select" }
+            ToolButton { text: "Snap"; checked: snapEnabled; onClicked: snapEnabled = !snapEnabled }
+            ToolSeparator {}
+            ToolButton { text: "Left"; onClicked: alignSelection("left") }
+            ToolButton { text: "Center"; onClicked: alignSelection("hcenter") }
+            ToolButton { text: "Right"; onClicked: alignSelection("right") }
+            ToolButton { text: "Top"; onClicked: alignSelection("top") }
+            ToolButton { text: "Middle"; onClicked: alignSelection("vcenter") }
+            ToolButton { text: "Bottom"; onClicked: alignSelection("bottom") }
+            Item { Layout.fillWidth: true }
         }
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 12
+
+        Rectangle {
+            Layout.preferredWidth: 190
+            Layout.fillHeight: true
+            color: "#ffffff"
+            border.color: "#c9d2df"
+            radius: 6
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+
+                Label { text: "Objects"; font.bold: true }
+                Label {
+                    text: selectedObjectId === "" ? "No object selected" : "Selected: " + selectedObjectId
+                    color: "#4b5563"
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Button {
+                    text: "Duplicate"
+                    enabled: selectedObjectId !== ""
+                    Layout.fillWidth: true
+                    onClicked: duplicateSelected()
+                }
+                Button {
+                    text: "Delete"
+                    enabled: selectedObjectId !== ""
+                    Layout.fillWidth: true
+                    onClicked: deleteSelected()
+                }
+            }
+        }
+
+        Rectangle {
+            id: canvasFrame
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: "#dfe6ef"
+            border.color: "#bac5d3"
+            radius: 6
+            clip: true
+
+            Rectangle {
+                id: canvas
+                width: 900
+                height: 620
+                anchors.centerIn: parent
+                color: "#ffffff"
+                border.color: "#8d99a8"
+
+                Repeater {
+                    model: objectsModel
+                    delegate: Item {
+                        id: objectItem
+                        x: model.xPos
+                        y: model.yPos
+                        width: model.widthValue
+                        height: model.heightValue
+                        visible: model.visibleObject && root.layerVisible(model.layerId)
+                        z: root.layerIndex(model.layerId) * 100 + index
+                        rotation: model.rotationValue
+
+                        Image {
+                            anchors.fill: parent
+                            source: model.kind === "image" ? model.source : ""
+                            fillMode: Image.PreserveAspectFit
+                            visible: model.kind === "image"
+                            cache: false
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: model.kind !== "image"
+                            color: "#e8eef6"
+                            border.color: "#9ca8b7"
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: selectedObjectId === model.objectId
+                            color: "transparent"
+                            border.color: "#2563eb"
+                            border.width: 2
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            drag.target: objectItem
+                            enabled: activeTool === "select" && !root.layerLocked(model.layerId)
+                            onPressed: selectedObjectId = model.objectId
+                            onPositionChanged: {
+                                if (drag.active) {
+                                    var nx = snapEnabled ? Math.round(objectItem.x / 10) * 10 : objectItem.x
+                                    var ny = snapEnabled ? Math.round(objectItem.y / 10) * 10 : objectItem.y
+                                    objectsModel.setProperty(index, "xPos", Math.max(0, Math.min(canvas.width - objectItem.width, nx)))
+                                    objectsModel.setProperty(index, "yPos", Math.max(0, Math.min(canvas.height - objectItem.height, ny)))
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 14
+                            height: 14
+                            radius: 2
+                            color: "#2563eb"
+                            visible: selectedObjectId === model.objectId && !root.layerLocked(model.layerId)
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            MouseArea {
+                                anchors.fill: parent
+                                property real startX
+                                property real startY
+                                property real startW
+                                property real startH
+                                onPressed: {
+                                    startX = mouse.x
+                                    startY = mouse.y
+                                    startW = objectItem.width
+                                    startH = objectItem.height
+                                }
+                                onPositionChanged: {
+                                    var nw = Math.max(32, startW + mouse.x - startX)
+                                    var nh = Math.max(32, startH + mouse.y - startY)
+                                    objectsModel.setProperty(index, "widthValue", nw)
+                                    objectsModel.setProperty(index, "heightValue", nh)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.preferredWidth: 240
+            Layout.fillHeight: true
+            color: "#ffffff"
+            border.color: "#c9d2df"
+            radius: 6
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+
+                Label { text: "Layers"; font.bold: true }
+                Repeater {
+                    model: layersModel
+                    delegate: RadioButton {
+                        text: name
+                        checked: selectedLayerId === layerId
+                        onClicked: selectedLayerId = layerId
+                    }
+                }
+            }
+        }
+    }
+
+    function addImage(fileUrl) {
+        objectsModel.append({
+            objectId: "object-" + nextObjectId++,
+            kind: "image",
+            layerId: selectedLayerId,
+            source: fileUrl,
+            xPos: 80 + objectsModel.count * 20,
+            yPos: 70 + objectsModel.count * 20,
+            widthValue: 260,
+            heightValue: 180,
+            rotationValue: 0,
+            visibleObject: true
+        })
+        selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
+    }
+
+    function selectedIndex() {
+        for (var i = 0; i < objectsModel.count; i++) {
+            if (objectsModel.get(i).objectId === selectedObjectId)
+                return i
+        }
+        return -1
+    }
+
+    function duplicateSelected() {
+        var i = selectedIndex()
+        if (i < 0)
+            return
+        var item = objectsModel.get(i)
+        objectsModel.append({
+            objectId: "object-" + nextObjectId++,
+            kind: item.kind,
+            layerId: item.layerId,
+            source: item.source,
+            xPos: item.xPos + 30,
+            yPos: item.yPos + 30,
+            widthValue: item.widthValue,
+            heightValue: item.heightValue,
+            rotationValue: item.rotationValue,
+            visibleObject: true
+        })
+        selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
+    }
+
+    function deleteSelected() {
+        var i = selectedIndex()
+        if (i >= 0)
+            objectsModel.remove(i)
+        selectedObjectId = ""
+    }
+
+    function alignSelection(mode) {
+        var selected = []
+        for (var i = 0; i < objectsModel.count; i++) {
+            var item = objectsModel.get(i)
+            if (item.layerId === selectedLayerId && item.visibleObject && layerVisible(item.layerId))
+                selected.push(i)
+        }
+        if (selected.length === 0 && selectedIndex() >= 0)
+            selected = [selectedIndex()]
+        if (selected.length === 0)
+            return
+
+        var left = 999999
+        var top = 999999
+        var right = -999999
+        var bottom = -999999
+        for (var s = 0; s < selected.length; s++) {
+            var obj = objectsModel.get(selected[s])
+            left = Math.min(left, obj.xPos)
+            top = Math.min(top, obj.yPos)
+            right = Math.max(right, obj.xPos + obj.widthValue)
+            bottom = Math.max(bottom, obj.yPos + obj.heightValue)
+        }
+        for (var t = 0; t < selected.length; t++) {
+            var idx = selected[t]
+            var target = objectsModel.get(idx)
+            if (mode === "left")
+                objectsModel.setProperty(idx, "xPos", left)
+            if (mode === "hcenter")
+                objectsModel.setProperty(idx, "xPos", left + (right - left) / 2 - target.widthValue / 2)
+            if (mode === "right")
+                objectsModel.setProperty(idx, "xPos", right - target.widthValue)
+            if (mode === "top")
+                objectsModel.setProperty(idx, "yPos", top)
+            if (mode === "vcenter")
+                objectsModel.setProperty(idx, "yPos", top + (bottom - top) / 2 - target.heightValue / 2)
+            if (mode === "bottom")
+                objectsModel.setProperty(idx, "yPos", bottom - target.heightValue)
+        }
+    }
+
+    function layerIndex(layerId) {
+        for (var i = 0; i < layersModel.count; i++) {
+            if (layersModel.get(i).layerId === layerId)
+                return i
+        }
+        return 0
+    }
+
+    function layerVisible(layerId) {
+        for (var i = 0; i < layersModel.count; i++) {
+            if (layersModel.get(i).layerId === layerId)
+                return layersModel.get(i).visibleLayer
+        }
+        return true
+    }
+
+    function layerLocked(layerId) {
+        for (var i = 0; i < layersModel.count; i++) {
+            if (layersModel.get(i).layerId === layerId)
+                return layersModel.get(i).lockedLayer
+        }
+        return false
     }
 }
 
