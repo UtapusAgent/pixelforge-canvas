@@ -210,13 +210,84 @@ ApplicationWindow {
                 anchors.margins: 12
                 spacing: 10
 
-                Label { text: "Layers"; font.bold: true }
-                Repeater {
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Layers"
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        text: "Add"
+                        onClicked: addLayer()
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        text: "Up"
+                        enabled: currentLayerIndex() < layersModel.count - 1
+                        onClicked: moveSelectedLayer(1)
+                    }
+                    Button {
+                        text: "Down"
+                        enabled: currentLayerIndex() > 0
+                        onClicked: moveSelectedLayer(-1)
+                    }
+                    Button {
+                        text: "Delete"
+                        enabled: layersModel.count > 1
+                        onClicked: deleteSelectedLayer()
+                    }
+                }
+
+                ListView {
+                    id: layerList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     model: layersModel
-                    delegate: RadioButton {
-                        text: name
-                        checked: selectedLayerId === layerId
-                        onClicked: selectedLayerId = layerId
+                    clip: true
+                    spacing: 6
+                    delegate: Rectangle {
+                        width: layerList.width
+                        height: 92
+                        radius: 5
+                        color: selectedLayerId === layerId ? "#e7eef8" : "#ffffff"
+                        border.color: selectedLayerId === layerId ? "#2563eb" : "#c9d2df"
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 5
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                RadioButton {
+                                    checked: selectedLayerId === layerId
+                                    onClicked: selectedLayerId = layerId
+                                }
+                                TextField {
+                                    text: name
+                                    selectByMouse: true
+                                    Layout.fillWidth: true
+                                    onEditingFinished: layersModel.setProperty(index, "name", text)
+                                }
+                            }
+
+                            RowLayout {
+                                CheckBox {
+                                    text: "Visible"
+                                    checked: visibleLayer
+                                    onToggled: layersModel.setProperty(index, "visibleLayer", checked)
+                                }
+                                CheckBox {
+                                    text: "Locked"
+                                    checked: lockedLayer
+                                    onToggled: layersModel.setProperty(index, "lockedLayer", checked)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -338,5 +409,75 @@ ApplicationWindow {
         }
         return false
     }
-}
 
+    function addLayer() {
+        var id = "layer-" + nextLayerId++
+        layersModel.append({
+            layerId: id,
+            name: "Layer " + (layersModel.count + 1),
+            visibleLayer: true,
+            lockedLayer: false
+        })
+        selectedLayerId = id
+    }
+
+    function currentLayerIndex() {
+        for (var i = 0; i < layersModel.count; i++) {
+            if (layersModel.get(i).layerId === selectedLayerId)
+                return i
+        }
+        return -1
+    }
+
+    function moveSelectedLayer(delta) {
+        var from = currentLayerIndex()
+        var to = from + delta
+        if (from < 0 || to < 0 || to >= layersModel.count)
+            return
+        layersModel.move(from, to, 1)
+    }
+
+    function layerHasObjects(layerId) {
+        for (var i = 0; i < objectsModel.count; i++) {
+            if (objectsModel.get(i).layerId === layerId)
+                return true
+        }
+        return false
+    }
+
+    function deleteSelectedLayer() {
+        var idx = currentLayerIndex()
+        if (idx < 0 || layersModel.count <= 1)
+            return
+        var layerId = selectedLayerId
+        if (layerHasObjects(layerId)) {
+            confirmDeleteLayerDialog.open()
+            return
+        }
+        removeLayerAt(idx)
+    }
+
+    function removeLayerAt(idx) {
+        var layerId = layersModel.get(idx).layerId
+        for (var i = objectsModel.count - 1; i >= 0; i--) {
+            if (objectsModel.get(i).layerId === layerId)
+                objectsModel.remove(i)
+        }
+        layersModel.remove(idx)
+        selectedLayerId = layersModel.get(Math.max(0, idx - 1)).layerId
+        selectedObjectId = ""
+    }
+
+    Dialog {
+        id: confirmDeleteLayerDialog
+        title: "Delete populated layer?"
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            text: "This layer contains objects. Delete the layer and its contents?"
+            wrapMode: Text.WordWrap
+            width: 320
+        }
+        onAccepted: removeLayerAt(currentLayerIndex())
+    }
+}
