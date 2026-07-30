@@ -1,0 +1,8 @@
+.tools/
+bin/
+dist/
+*.log
+*.tmp
+*.test
+coverage.out
+
