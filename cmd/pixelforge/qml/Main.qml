@@ -21,6 +21,9 @@ ApplicationWindow {
     property string currentFontFamily: "Sans Serif"
     property int currentFontSize: 36
     property string currentTextColor: "#20242a"
+    property int currentBrushSize: 16
+    property real currentBrushOpacity: 0.9
+    property string currentBrushColor: "#ef4444"
 
     ListModel {
         id: layersModel
@@ -51,7 +54,10 @@ ApplicationWindow {
 
             Button { text: "Import"; onClicked: importDialog.open() }
             Button { text: "Add Text"; onClicked: addTextObject() }
+            Button { text: "Add Drawing"; onClicked: addDrawingObject() }
             ToolButton { text: "Select"; checked: activeTool === "select"; onClicked: activeTool = "select" }
+            ToolButton { text: "Brush"; checked: activeTool === "brush"; onClicked: activeTool = "brush" }
+            ToolButton { text: "Eraser"; checked: activeTool === "eraser"; onClicked: activeTool = "eraser" }
             ToolButton { text: "Snap"; checked: snapEnabled; onClicked: snapEnabled = !snapEnabled }
             Button {
                 text: "Remove BG"
@@ -136,6 +142,27 @@ ApplicationWindow {
                     Button { text: "Black"; onClicked: { currentTextColor = "#20242a"; applyTextStyle() } }
                     Button { text: "Blue"; onClicked: { currentTextColor = "#2563eb"; applyTextStyle() } }
                 }
+                Rectangle { height: 1; color: "#d6dee9"; Layout.fillWidth: true }
+                Label { text: "Brush"; font.bold: true }
+                SpinBox {
+                    from: 1
+                    to: 96
+                    value: currentBrushSize
+                    Layout.fillWidth: true
+                    onValueModified: currentBrushSize = value
+                }
+                Slider {
+                    from: 0.1
+                    to: 1
+                    value: currentBrushOpacity
+                    Layout.fillWidth: true
+                    onMoved: currentBrushOpacity = value
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button { text: "Red"; onClicked: currentBrushColor = "#ef4444" }
+                    Button { text: "Blue"; onClicked: currentBrushColor = "#2563eb" }
+                }
             }
         }
 
@@ -215,6 +242,58 @@ ApplicationWindow {
                             onTextChanged: {
                                 if (model.kind === "text")
                                     objectsModel.setProperty(index, "textContent", text)
+                            }
+                        }
+
+                        Canvas {
+                            id: drawingCanvas
+                            anchors.fill: parent
+                            visible: model.kind === "drawing"
+                            property var strokes: []
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                for (var s = 0; s < strokes.length; s++) {
+                                    var stroke = strokes[s]
+                                    if (stroke.points.length < 2)
+                                        continue
+                                    ctx.globalCompositeOperation = stroke.eraser ? "destination-out" : "source-over"
+                                    ctx.globalAlpha = stroke.opacity
+                                    ctx.strokeStyle = stroke.color
+                                    ctx.lineWidth = stroke.size
+                                    ctx.beginPath()
+                                    ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+                                    for (var p = 1; p < stroke.points.length; p++)
+                                        ctx.lineTo(stroke.points[p].x, stroke.points[p].y)
+                                    ctx.stroke()
+                                }
+                                ctx.globalAlpha = 1
+                                ctx.globalCompositeOperation = "source-over"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: model.kind === "drawing" && selectedObjectId === model.objectId && (activeTool === "brush" || activeTool === "eraser") && !root.layerLocked(model.layerId)
+                                property var activeStroke: null
+                                onPressed: {
+                                    activeStroke = {
+                                        color: currentBrushColor,
+                                        size: currentBrushSize,
+                                        opacity: currentBrushOpacity,
+                                        eraser: activeTool === "eraser",
+                                        points: [{x: mouse.x, y: mouse.y}]
+                                    }
+                                    drawingCanvas.strokes.push(activeStroke)
+                                    drawingCanvas.requestPaint()
+                                }
+                                onPositionChanged: {
+                                    if (pressed && activeStroke !== null) {
+                                        activeStroke.points.push({x: mouse.x, y: mouse.y})
+                                        drawingCanvas.requestPaint()
+                                    }
+                                }
+                                onReleased: activeStroke = null
                             }
                         }
 
@@ -386,7 +465,8 @@ ApplicationWindow {
             textContent: "",
             fontFamily: currentFontFamily,
             fontSize: currentFontSize,
-            textColor: currentTextColor
+            textColor: currentTextColor,
+            drawingSeed: ""
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
@@ -430,9 +510,33 @@ ApplicationWindow {
             textContent: "Double click to edit",
             fontFamily: currentFontFamily,
             fontSize: currentFontSize,
-            textColor: currentTextColor
+            textColor: currentTextColor,
+            drawingSeed: ""
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
+    }
+
+    function addDrawingObject() {
+        objectsModel.append({
+            objectId: "object-" + nextObjectId++,
+            kind: "drawing",
+            layerId: selectedLayerId,
+            source: "",
+            xPos: 0,
+            yPos: 0,
+            widthValue: canvas.width,
+            heightValue: canvas.height,
+            rotationValue: 0,
+            visibleObject: true,
+            backgroundRemoved: false,
+            textContent: "",
+            fontFamily: currentFontFamily,
+            fontSize: currentFontSize,
+            textColor: currentTextColor,
+            drawingSeed: ""
+        })
+        selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
+        activeTool = "brush"
     }
 
     function applyTextStyle() {
@@ -464,7 +568,8 @@ ApplicationWindow {
             textContent: item.textContent,
             fontFamily: item.fontFamily,
             fontSize: item.fontSize,
-            textColor: item.textColor
+            textColor: item.textColor,
+            drawingSeed: item.drawingSeed
         })
         selectedObjectId = objectsModel.get(objectsModel.count - 1).objectId
     }
