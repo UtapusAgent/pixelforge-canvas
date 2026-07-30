@@ -27,3 +27,12 @@ make run
 
 The Go process writes the embedded QML UI into a temporary runtime directory and launches Qt. Core image processing and export helpers live in Go packages so they can be tested independently from the desktop runtime.
 
+## Helper Commands
+
+```sh
+pixelforge device-status
+pixelforge bg-remove input.jpg output.png
+pixelforge export-jpg input.png output.jpg
+```
+
+`bg-remove` is an MVP local cutout helper. It detects likely local GPU availability for status reporting and uses a CPU-safe segmentation fallback when a dedicated AI runtime is not configured.
